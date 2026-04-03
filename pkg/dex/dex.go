@@ -286,7 +286,136 @@ func Parse(data []byte) (*DexFile, error) {
 		d.parseMapList(d.Header.MapOff)
 	}
 
+	// Parse all code items referenced by methods
+	d.parseAllCodeItems()
+
 	return d, nil
+}
+
+// parseAllCodeItems parses code items from class data methods.
+func (d *DexFile) parseAllCodeItems() {
+	for _, cd := range d.ClassData {
+		for _, m := range cd.DirectMethods {
+			if m.CodeOff > 0 {
+				if _, exists := d.CodeItems[m.CodeOff]; !exists {
+					code, err := d.parseCodeItem(m.CodeOff)
+					if err == nil {
+						d.CodeItems[m.CodeOff] = code
+					}
+				}
+			}
+		}
+		for _, m := range cd.VirtualMethods {
+			if m.CodeOff > 0 {
+				if _, exists := d.CodeItems[m.CodeOff]; !exists {
+					code, err := d.parseCodeItem(m.CodeOff)
+					if err == nil {
+						d.CodeItems[m.CodeOff] = code
+					}
+				}
+			}
+		}
+	}
+}
+
+// parseCodeItem parses a code item at the given offset.
+func (d *DexFile) parseCodeItem(offset uint32) (*CodeItem, error) {
+	if offset+16 > uint32(len(d.raw)) {
+		return nil, fmt.Errorf("code item out of bounds")
+	}
+
+	code := &CodeItem{}
+	off := offset
+
+	code.RegistersSize = binary.LittleEndian.Uint16(d.raw[off : off+2])
+	off += 2
+	code.InsSize = binary.LittleEndian.Uint16(d.raw[off : off+2])
+	off += 2
+	code.OutsSize = binary.LittleEndian.Uint16(d.raw[off : off+2])
+	off += 2
+	code.TriesSize = binary.LittleEndian.Uint16(d.raw[off : off+2])
+	off += 2
+	code.DebugInfoOff = leb128.ReadUint32(d.raw[off : off+4])
+	off += 4
+	code.InsnsSize = leb128.ReadUint32(d.raw[off : off+4])
+	off += 4
+
+	// Read instructions
+	if code.InsnsSize > 0 {
+		code.Insns = make([]uint16, code.InsnsSize)
+		for i := uint32(0); i < code.InsnsSize; i++ {
+			if off+2 > uint32(len(d.raw)) {
+				break
+			}
+			code.Insns[i] = binary.LittleEndian.Uint16(d.raw[off : off+2])
+			off += 2
+		}
+	}
+
+	// Align to 4 bytes if there are tries
+	if code.TriesSize > 0 && (off%4) != 0 {
+		off += 2
+	}
+
+	// Parse tries and catch handlers
+	if code.TriesSize > 0 {
+		code.Tries = make([]TryItem, code.TriesSize)
+		for i := uint16(0); i < code.TriesSize; i++ {
+			if off+8 > uint32(len(d.raw)) {
+				break
+			}
+			code.Tries[i].StartAddr = leb128.ReadUint32(d.raw[off : off+4])
+			off += 4
+			code.Tries[i].InsnCount = binary.LittleEndian.Uint16(d.raw[off : off+2])
+			off += 2
+			code.Tries[i].HandlerOff = binary.LittleEndian.Uint16(d.raw[off : off+2])
+			off += 2
+		}
+
+		// Parse catch handlers (encoded)
+		if off < uint32(len(d.raw)) {
+			handler := &CatchHandler{}
+			size, n := leb128.ReadSLEB128(d.raw[off:])
+			off += uint32(n)
+			handler.Size = int32(size)
+
+			handler.Handlers = make([]EncodedCatchHandler, abs32(handler.Size))
+			for i := int32(0); i < abs32(handler.Size); i++ {
+				if off >= uint32(len(d.raw)) {
+					break
+				}
+				typeIdx, n1 := leb128.ReadULEB128(d.raw[off:])
+				off += uint32(n1)
+				addr, n2 := leb128.ReadULEB128(d.raw[off:])
+				off += uint32(n2)
+				handler.Handlers[i] = EncodedCatchHandler{
+					TypeIdx: uint32(typeIdx),
+					Addr:    uint32(addr),
+				}
+			}
+			if handler.Size <= 0 {
+				// Has catch_all
+				if off < uint32(len(d.raw)) {
+					catchAllAddr, n := leb128.ReadULEB128(d.raw[off:])
+					_ = catchAllAddr
+					_ = n
+					handler.Handlers = append(handler.Handlers, EncodedCatchHandler{
+						CatchAll: true,
+					})
+				}
+			}
+			code.CatchHandler = handler
+		}
+	}
+
+	return code, nil
+}
+
+func abs32(x int32) int32 {
+	if x < 0 {
+		return -x
+	}
+	return x
 }
 
 func (d *DexFile) parseHeader() error {
