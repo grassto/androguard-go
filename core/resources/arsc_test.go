@@ -1,4 +1,4 @@
-package arsc
+package resources
 
 import (
 	"testing"

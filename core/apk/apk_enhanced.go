@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/goandroguard/goandroguard/pkg/arsc"
+	"github.com/goandroguard/goandroguard/core/resources"
 )
 
 // IsPacked returns true if the APK appears to be packed or obfuscated.
@@ -128,7 +128,7 @@ func (a *APK) resolveResourceString(ref string) string {
 			if typ.ID == typeID {
 				for _, entry := range typ.Entries {
 					if entry.Index == entryID && entry.Value != nil {
-						return arsc.GetResourceValueString(entry.Value, a.resourcesTable.StringPool)
+						return resources.GetResourceValueString(entry.Value, a.resourcesTable.StringPool)
 					}
 				}
 			}
@@ -606,7 +606,7 @@ func (a *APK) GetResValue(name string) string {
 				if typ.Name == "string" {
 					for _, entry := range typ.Entries {
 						if entry.Name == stringName && entry.Value != nil {
-							return arsc.GetResourceValueString(entry.Value, a.resourcesTable.StringPool)
+							return resources.GetResourceValueString(entry.Value, a.resourcesTable.StringPool)
 						}
 					}
 				}

@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/goandroguard/goandroguard/pkg/dex"
+	"github.com/goandroguard/goandroguard/core/dex"
 )
 
 // BasicBlock represents a basic block in a method's control flow graph.

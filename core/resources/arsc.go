@@ -1,7 +1,7 @@
 // Package arsc parses Android Resource Table (.arsc) files.
 // ARSC files contain compiled resources (strings, layouts, drawables, etc.)
 // and are found inside APK files as resources.arsc.
-package arsc
+package resources
 
 import (
 	"encoding/binary"

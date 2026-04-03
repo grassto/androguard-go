@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/goandroguard/goandroguard/pkg/dex"
+	"github.com/goandroguard/goandroguard/core/dex"
 )
 
 // DEXBasicBlock represents a basic block in a method's control flow graph.

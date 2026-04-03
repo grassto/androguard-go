@@ -12,10 +12,10 @@ import (
 	"io"
 	"strings"
 
-	"github.com/goandroguard/goandroguard/pkg/arsc"
-	"github.com/goandroguard/goandroguard/pkg/axml"
-	"github.com/goandroguard/goandroguard/pkg/certs"
-	"github.com/goandroguard/goandroguard/pkg/dex"
+	"github.com/goandroguard/goandroguard/core/resources"
+	"github.com/goandroguard/goandroguard/core/axml"
+	"github.com/goandroguard/goandroguard/core/certs"
+	"github.com/goandroguard/goandroguard/core/dex"
 )
 
 // APK Signature Block constants
@@ -37,7 +37,7 @@ type APK struct {
 	zipReader      *zip.Reader
 	manifest       *axml.AXMLDocument
 	manifestRaw    []byte
-	resourcesTable *arsc.ResourceTable
+	resourcesTable *resources.ResourceTable
 	certificates   []*certs.ParsedCertificate
 	signatureBlock *APKSignatureBlock
 	dexFiles       []*dex.DexFile
@@ -169,7 +169,7 @@ func (a *APK) parseResources() {
 				return
 			}
 
-			table, err := arsc.ParseARSC(data)
+			table, err := resources.ParseARSC(data)
 			if err != nil {
 				return
 			}
@@ -721,7 +721,7 @@ func (a *APK) GetSignatureBlock() *APKSignatureBlock {
 }
 
 // GetResourcesTable returns the parsed resources table.
-func (a *APK) GetResourcesTable() *arsc.ResourceTable {
+func (a *APK) GetResourcesTable() *resources.ResourceTable {
 	return a.resourcesTable
 }
 

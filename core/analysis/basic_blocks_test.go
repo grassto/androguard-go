@@ -3,7 +3,7 @@ package analysis
 import (
 	"testing"
 
-	"github.com/goandroguard/goandroguard/pkg/dex"
+	"github.com/goandroguard/goandroguard/core/dex"
 )
 
 func TestDEXBasicBlock(t *testing.T) {
