@@ -56,9 +56,8 @@ import (
     "fmt"
     "log"
 
-    "github.com/grassto/androguard-go/core/apk"
-    "github.com/grassto/androguard-go/core/dex"
     "github.com/grassto/androguard-go/core/analysis"
+    "github.com/grassto/androguard-go/core/apk"
 )
 
 func main() {
@@ -96,7 +95,11 @@ func main() {
     fmt.Printf("Signed V3: %v\n", a.IsSignedV3())
 
     // Get DEX files and run analysis
-    dx := analysis.New(a.GetDexFiles()[0])
+    dexFiles := a.GetDexFiles()
+    if len(dexFiles) == 0 {
+        log.Fatal("no DEX files found")
+    }
+    dx := analysis.New(dexFiles[0])
     fmt.Printf("Classes: %d\n", len(dx.GetClasses()))
     fmt.Printf("Methods: %d\n", len(dx.GetMethods()))
 
