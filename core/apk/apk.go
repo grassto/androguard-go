@@ -787,10 +787,41 @@ func (a *APK) getManifestAttribute(elementName, attrName string) string {
 		if elem.Name == elementName {
 			for _, attr := range elem.Attributes {
 				if attr.Name == attrName && (attr.NamespaceURI == "" || attr.NamespaceURI == nsAndroid) {
-					return attr.Value
+					return a.formatAttrValue(attr)
 				}
 			}
 		}
 	}
 	return ""
+}
+
+// formatAttrValue returns a human-readable string for an AXML attribute value.
+func (a *APK) formatAttrValue(attr axml.XMLAttributeNode) string {
+	// If we have a direct string value, return it
+	if attr.Value != "" {
+		return attr.Value
+	}
+
+	// Otherwise, format based on value type
+	switch attr.ValueType {
+	case axml.AttrTypeString:
+		return attr.Value
+	case axml.AttrTypeIntDec:
+		return fmt.Sprintf("%d", int32(attr.ValueData))
+	case axml.AttrTypeIntHex:
+		return fmt.Sprintf("0x%x", attr.ValueData)
+	case axml.AttrTypeIntBoolean:
+		if attr.ValueData != 0 {
+			return "true"
+		}
+		return "false"
+	case axml.AttrTypeReference:
+		// Resource reference - return hex representation
+		return fmt.Sprintf("@0x%x", attr.ValueData)
+	default:
+		if attr.Value != "" {
+			return attr.Value
+		}
+		return fmt.Sprintf("%d", int32(attr.ValueData))
+	}
 }
