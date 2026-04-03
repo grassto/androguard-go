@@ -42,6 +42,7 @@ type MethodAnalysis struct {
 	ClassName     string
 	Idx           uint32
 	AccessFlags   uint32
+	CodeOff       uint32
 	IsStatic      bool
 	IsAbstract    bool
 	IsNative      bool
@@ -202,6 +203,7 @@ func (a *Analysis) analyzeMethod(disasm *dex.Disassembler, className string, cla
 		ClassName:     className,
 		Idx:           m.MethodIdxDiff,
 		AccessFlags:   m.AccessFlags,
+		CodeOff:       m.CodeOff,
 		IsStatic:      m.AccessFlags&dex.AccStatic != 0,
 		IsAbstract:    m.AccessFlags&dex.AccAbstract != 0,
 		IsNative:      m.AccessFlags&dex.AccNative != 0,
