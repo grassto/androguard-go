@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/goandroguard/goandroguard/core/resources"
+	"github.com/grassto/androguard-go/core/resources"
 )
 
 // IsPacked returns true if the APK appears to be packed or obfuscated.

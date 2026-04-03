@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/goandroguard/goandroguard/core/analysis"
-	"github.com/goandroguard/goandroguard/core/config"
-	"github.com/goandroguard/goandroguard/core/dex"
+	"github.com/grassto/androguard-go/core/analysis"
+	"github.com/grassto/androguard-go/core/config"
+	"github.com/grassto/androguard-go/core/dex"
 )
 
 // FormatClassToJava transforms a class name to the typed variant found in DEX files.

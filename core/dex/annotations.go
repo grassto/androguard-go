@@ -5,7 +5,7 @@ package dex
 import (
 	"fmt"
 
-	"github.com/goandroguard/goandroguard/internal/leb128"
+	"github.com/grassto/androguard-go/internal/leb128"
 )
 
 // Annotation visibility constants

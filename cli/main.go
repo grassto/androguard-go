@@ -6,9 +6,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/goandroguard/goandroguard/core/apk"
-	"github.com/goandroguard/goandroguard/core/axml"
-	"github.com/goandroguard/goandroguard/core/resources"
+	"github.com/grassto/androguard-go/core/apk"
+	"github.com/grassto/androguard-go/core/axml"
+	"github.com/grassto/androguard-go/core/resources"
 )
 
 func main() {

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/goandroguard/goandroguard/core/certs"
+	"github.com/grassto/androguard-go/core/certs"
 )
 
 // IsSigned returns true if the APK has any kind of signature.

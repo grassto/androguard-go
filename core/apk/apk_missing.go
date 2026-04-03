@@ -4,9 +4,9 @@ import (
 	"io"
 	"strings"
 
-	"github.com/goandroguard/goandroguard/core/axml"
-	"github.com/goandroguard/goandroguard/core/dex"
-	"github.com/goandroguard/goandroguard/core/resources"
+	"github.com/grassto/androguard-go/core/axml"
+	"github.com/grassto/androguard-go/core/dex"
+	"github.com/grassto/androguard-go/core/resources"
 )
 
 // --- Missing methods from Python androguard APK class ---

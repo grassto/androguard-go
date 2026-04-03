@@ -3,7 +3,7 @@ package dex
 import (
 	"fmt"
 
-	"github.com/goandroguard/goandroguard/internal/leb128"
+	"github.com/grassto/androguard-go/internal/leb128"
 )
 
 // EncodedTypeAddrPair represents an encoded_type_addr_pair in a catch handler.

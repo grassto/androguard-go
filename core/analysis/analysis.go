@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/goandroguard/goandroguard/core/dex"
+	"github.com/grassto/androguard-go/core/dex"
 )
 
 // Analysis holds analysis results for a DEX file.
