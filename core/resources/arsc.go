@@ -73,6 +73,7 @@ type ResTableConfig struct {
 	Language    [2]byte
 	Country     [2]byte
 	Orientation uint8
+	Touchscreen uint8
 	Density     uint16
 	ScreenSize  uint8
 	Version     uint16
@@ -135,13 +136,15 @@ func (p *ARSCParser) Parse() (*ResourceTable, error) {
 		return nil, fmt.Errorf("arsc: expected ResTable type (0x%x), got 0x%x", ResTableType, header.ChunkType)
 	}
 
-	// Read package count
-	if p.pos+4 > len(p.data) {
+	// Read package count (immediately after the 8-byte chunk header)
+	if p.pos+12 > len(p.data) {
 		return nil, fmt.Errorf("arsc: cannot read package count")
 	}
-	packageCount := binary.LittleEndian.Uint32(p.data[p.pos : p.pos+4])
-	p.pos += 4
+	packageCount := binary.LittleEndian.Uint32(p.data[p.pos+8 : p.pos+12])
 	_ = packageCount
+
+	// Advance past the full header
+	p.pos += int(header.HeaderSize)
 
 	// Parse chunks until end of table
 	tableEnd := int(header.ChunkSize)
@@ -261,19 +264,20 @@ func decodeUTF8(data []byte, offset int) string {
 }
 
 func decodeUTF16(data []byte, offset int) string {
-	if offset >= len(data) {
+	if offset+2 > len(data) {
 		return ""
 	}
 
-	strLen, n := leb128.ReadULEB128(data[offset:])
-	offset += n
+	// UTF-16 string length is a plain uint16, not ULEB128
+	strLen := int(binary.LittleEndian.Uint16(data[offset : offset+2]))
+	offset += 2
 
-	if offset+int(strLen)*2 > len(data) {
+	if offset+strLen*2 > len(data) {
 		return ""
 	}
 
 	runes := make([]rune, 0, strLen)
-	for i := uint64(0); i < strLen; i++ {
+	for i := 0; i < strLen; i++ {
 		ch := binary.LittleEndian.Uint16(data[offset : offset+2])
 		offset += 2
 		runes = append(runes, rune(ch))
@@ -307,24 +311,42 @@ func (p *ARSCParser) parsePackage(offset int) (*ResourcePackage, error) {
 	_ = lastPublicKey
 
 	// Parse type string pool
+	var typeStringPoolSize int
 	if typeStringsOffset > 0 {
 		pool, err := p.parseStringPool(offset + int(typeStringsOffset))
 		if err == nil {
 			pkg.TypeStrings = pool
 		}
+		// Get the string pool chunk size to skip past it
+		spOff := offset + int(typeStringsOffset)
+		if spOff+8 <= len(p.data) {
+			typeStringPoolSize = int(binary.LittleEndian.Uint32(p.data[spOff+4 : spOff+8]))
+		}
 	}
 
 	// Parse key string pool
+	var keyStringPoolSize int
 	if keyStringsOffset > 0 {
 		pool, err := p.parseStringPool(offset + int(keyStringsOffset))
 		if err == nil {
 			pkg.KeyStrings = pool
 		}
+		// Get the string pool chunk size to skip past it
+		spOff := offset + int(keyStringsOffset)
+		if spOff+8 <= len(p.data) {
+			keyStringPoolSize = int(binary.LittleEndian.Uint32(p.data[spOff+4 : spOff+8]))
+		}
 	}
 
 	// Parse type specs and types
+	// Start after the last string pool (whichever comes last)
 	pkgEnd := offset + int(binary.LittleEndian.Uint32(data[4:8]))
 	pos := offset + 288
+	if int(typeStringsOffset) >= int(keyStringsOffset) {
+		pos = offset + int(typeStringsOffset) + typeStringPoolSize
+	} else {
+		pos = offset + int(keyStringsOffset) + keyStringPoolSize
+	}
 
 	for pos < pkgEnd && pos < len(p.data) {
 		if pos+8 > len(p.data) {
@@ -403,13 +425,14 @@ func (p *ARSCParser) parseTypeSpec(offset int, typeStrings []string) (*TypeSpec,
 }
 
 func (p *ARSCParser) parseType(offset int, typeStrings, keyStrings []string) (*ResourceType, error) {
-	if offset+16 > len(p.data) {
+	if offset+20 > len(p.data) {
 		return nil, fmt.Errorf("type header too short")
 	}
 
 	data := p.data[offset:]
 	typ := &ResourceType{}
 	typ.ID = uint32(data[8])
+	headerSize := binary.LittleEndian.Uint16(data[2:4])
 
 	if int(typ.ID-1) < len(typeStrings) {
 		typ.Name = typeStrings[typ.ID-1]
@@ -418,25 +441,25 @@ func (p *ARSCParser) parseType(offset int, typeStrings, keyStrings []string) (*R
 	entryCount := binary.LittleEndian.Uint32(data[12:16])
 	entriesStart := binary.LittleEndian.Uint32(data[16:20])
 
-	// Read config (starts at offset 20)
+	// Read config (starts at offset 20 from chunk start)
 	configData := data[20:]
-	if len(configData) >= 8 {
-		typ.Config.MCC = binary.LittleEndian.Uint16(configData[0:2])
-		typ.Config.MNC = binary.LittleEndian.Uint16(configData[2:4])
-		copy(typ.Config.Language[:], configData[4:6])
-		copy(typ.Config.Country[:], configData[6:8])
-		if len(configData) > 10 {
-			typ.Config.Orientation = configData[10]
-		}
-		if len(configData) > 12 {
-			typ.Config.Density = binary.LittleEndian.Uint16(configData[12:14])
-		}
+	if len(configData) >= 64 {
+		typ.Config.MCC = binary.LittleEndian.Uint16(configData[4:6])
+		typ.Config.MNC = binary.LittleEndian.Uint16(configData[6:8])
+		copy(typ.Config.Language[:], configData[8:10])
+		copy(typ.Config.Country[:], configData[10:12])
+		typ.Config.Orientation = uint8(configData[12])
+		typ.Config.Touchscreen = uint8(configData[13])
+		typ.Config.Density = binary.LittleEndian.Uint16(configData[14:16])
+		typ.Config.Version = binary.LittleEndian.Uint16(configData[24:26])
 	}
 
 	// Read entry offsets
+	// The offset table is between the header (headerSize) and the entry data (entriesStart).
+	// Each offset is relative to entriesStart.
 	entryOffsets := make([]uint32, entryCount)
 	for i := uint32(0); i < entryCount; i++ {
-		off := offset + int(entriesStart) + int(i)*4
+		off := offset + int(headerSize) + int(i)*4
 		if off+4 > len(p.data) {
 			break
 		}
@@ -452,13 +475,8 @@ func (p *ARSCParser) parseType(offset int, typeStrings, keyStrings []string) (*R
 
 		entry := ResourceEntry{Index: i}
 
-		// Get key name
-		if int(i) < len(keyStrings) {
-			entry.Name = keyStrings[i]
-		}
-
 		entryOffset := offset + int(entriesStart) + int(entryOffsets[i])
-		if entryOffset+4 > len(p.data) {
+		if entryOffset+8 > len(p.data) {
 			typ.Entries = append(typ.Entries, entry)
 			continue
 		}
@@ -466,7 +484,12 @@ func (p *ARSCParser) parseType(offset int, typeStrings, keyStrings []string) (*R
 		entrySize := binary.LittleEndian.Uint16(p.data[entryOffset : entryOffset+2])
 		flags := binary.LittleEndian.Uint16(p.data[entryOffset+2 : entryOffset+4])
 		key := binary.LittleEndian.Uint32(p.data[entryOffset+4 : entryOffset+8])
-		_ = key
+
+		// Get key name from the entry's key field, not the loop index
+		if int(key) < len(keyStrings) {
+			entry.Name = keyStrings[key]
+		}
+
 
 		if flags&1 != 0 {
 			// Complex entry

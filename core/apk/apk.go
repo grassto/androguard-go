@@ -816,8 +816,19 @@ func (a *APK) formatAttrValue(attr axml.XMLAttributeNode) string {
 		}
 		return "false"
 	case axml.AttrTypeReference:
-		// Resource reference - return hex representation
+		// Resource reference (0x01)
 		return fmt.Sprintf("@0x%x", attr.ValueData)
+	case 0x07:
+		// Dynamic reference
+		return fmt.Sprintf("@0x%x", attr.ValueData)
+	case 0x08:
+		// This type is overloaded in Android:
+		// - If ValueData looks like a resource ID (0x7fXXXXXX), treat as reference
+		// - Otherwise, treat as integer
+		if (attr.ValueData >> 24) == 0x7f {
+			return fmt.Sprintf("@0x%x", attr.ValueData)
+		}
+		return fmt.Sprintf("%d", int32(attr.ValueData))
 	default:
 		if attr.Value != "" {
 			return attr.Value

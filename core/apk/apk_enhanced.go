@@ -119,17 +119,44 @@ func (a *APK) resolveResourceString(ref string) string {
 	}
 
 	// resource ID format: 0xPPTTEEEE where PP=package, TT=type, EEEE=entry
-	_ = (resID >> 24) & 0xFF // package
 	typeID := (resID >> 16) & 0xFF
 	entryID := resID & 0xFFFF
 
-	for _, pkg := range a.resourcesTable.Packages {
-		for _, typ := range pkg.Types {
-			if typ.ID == typeID {
+	// First pass: look for default config (no qualifiers) with string value
+	// Second pass: any config with string value
+	// Third pass: any config with any value
+	for pass := 0; pass < 3; pass++ {
+		for _, pkg := range a.resourcesTable.Packages {
+			for _, typ := range pkg.Types {
+				if typ.ID != typeID {
+					continue
+				}
+
+				// Check if this is the default config
+				isDefault := typ.Config.Language == [2]byte{} &&
+					typ.Config.Country == [2]byte{} &&
+					typ.Config.Density == 0 &&
+					typ.Config.Orientation == 0 &&
+					typ.Config.ScreenSize == 0 &&
+					typ.Config.Version == 0 &&
+					typ.Config.MCC == 0 &&
+					typ.Config.MNC == 0
+
+				if pass == 0 && !isDefault {
+					continue
+				}
+
 				for _, entry := range typ.Entries {
-					if entry.Index == entryID && entry.Value != nil {
-						return resources.GetResourceValueString(entry.Value, a.resourcesTable.StringPool)
+					if entry.Index != entryID || entry.Value == nil {
+						continue
 					}
+
+					// In passes 0-1, only accept string type (0x03)
+					if pass < 2 && entry.Value.DataType != 0x03 {
+						continue
+					}
+
+					return resources.GetResourceValueString(entry.Value, a.resourcesTable.StringPool)
 				}
 			}
 		}
@@ -171,15 +198,32 @@ func (a *APK) resolveResourceToFilePath(ref string) string {
 	typeID := (resID >> 16) & 0xFF
 	entryID := resID & 0xFFFF
 
+	// Collect all matching entries and pick the best one
+	type candidate struct {
+		path    string
+		version uint16
+		density uint16
+	}
+	var candidates []candidate
+
 	for _, pkg := range a.resourcesTable.Packages {
 		for _, typ := range pkg.Types {
-			if typ.ID == typeID {
-				for _, entry := range typ.Entries {
-					if entry.Index == entryID && entry.Value != nil {
-						if entry.Value.DataType == 0x03 { // String type
-							if int(entry.Value.Data) < len(a.resourcesTable.StringPool) {
-								return a.resourcesTable.StringPool[entry.Value.Data]
-							}
+			if typ.ID != typeID {
+				continue
+			}
+			for _, entry := range typ.Entries {
+				if entry.Index != entryID || entry.Value == nil {
+					continue
+				}
+				if entry.Value.DataType == 0x03 { // String type
+					if int(entry.Value.Data) < len(a.resourcesTable.StringPool) {
+						path := a.resourcesTable.StringPool[entry.Value.Data]
+						if path != "" {
+							candidates = append(candidates, candidate{
+								path:    path,
+								version: typ.Config.Version,
+								density: typ.Config.Density,
+							})
 						}
 					}
 				}
@@ -187,7 +231,28 @@ func (a *APK) resolveResourceToFilePath(ref string) string {
 		}
 	}
 
-	return ""
+	if len(candidates) == 0 {
+		return ""
+	}
+
+	// Prefer: anydpi > higher density > versioned > default
+	best := candidates[0]
+	for _, c := range candidates[1:] {
+		// Prefer entries with version qualifiers (like v26)
+		if c.version > best.version {
+			best = c
+			continue
+		}
+		if c.version < best.version {
+			continue
+		}
+		// Among same version, prefer higher density or anydpi
+		if c.density > best.density && c.density != 0xFFFF {
+			best = c
+		}
+	}
+
+	return best.path
 }
 
 // GetActivityAliases returns the activity aliases declared in the manifest.
