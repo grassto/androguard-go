@@ -413,7 +413,10 @@ func (d *Disassembler) readInstruction() (Instruction, error) {
 
 func (d *Disassembler) readBytes(n int) []byte {
 	if d.pos+n > len(d.code) {
-		return d.code[d.pos:]
+		// Pad with zeros to ensure we always return n bytes
+		result := make([]byte, n)
+		copy(result, d.code[d.pos:])
+		return result
 	}
 	return d.code[d.pos : d.pos+n]
 }
