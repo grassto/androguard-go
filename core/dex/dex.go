@@ -20,6 +20,12 @@ var (
 	DEXMagic38 = []byte{0x64, 0x65, 0x78, 0x0a, 0x30, 0x33, 0x38, 0x00}
 	DEXMagic39 = []byte{0x64, 0x65, 0x78, 0x0a, 0x30, 0x33, 0x39, 0x00}
 	ODEXMagic  = []byte{0x64, 0x65, 0x79, 0x0a} // "dey\n" prefix
+
+	// ODEX file magic constants
+	ODEXMagic35 = []byte{0x64, 0x65, 0x79, 0x0a, 0x30, 0x33, 0x35, 0x00} // "dey\n035\0"
+	ODEXMagic36 = []byte{0x64, 0x65, 0x79, 0x0a, 0x30, 0x33, 0x36, 0x00}
+	ODEXMagic37 = []byte{0x64, 0x65, 0x79, 0x0a, 0x30, 0x33, 0x37, 0x00}
+	ODEXMagic38 = []byte{0x64, 0x65, 0x79, 0x0a, 0x30, 0x33, 0x38, 0x00}
 )
 
 // Map item types
@@ -223,22 +229,35 @@ const NO_INDEX = 0xFFFFFFFF
 
 // DexFile represents a parsed DEX file
 type DexFile struct {
-	Header      Header
-	StringIDs   []StringID
-	StringData  []StringDataItem
-	TypeIDs     []TypeID
-	ProtoIDs    []ProtoID
-	FieldIDs    []FieldID
-	MethodIDs   []MethodID
-	ClassDefs   []ClassDef
-	ClassData   map[uint32]*ClassData // keyed by class def index
-	CodeItems   map[uint32]*CodeItem  // keyed by offset
-	MapItems    []MapItem
-	raw         []byte
+	Header       Header
+	StringIDs    []StringID
+	StringData   []StringDataItem
+	TypeIDs      []TypeID
+	ProtoIDs     []ProtoID
+	FieldIDs     []FieldID
+	MethodIDs    []MethodID
+	ClassDefs    []ClassDef
+	ClassData    map[uint32]*ClassData // keyed by class def index
+	CodeItems    map[uint32]*CodeItem  // keyed by offset
+	MapItems     []MapItem
+	IsODEXFile   bool          // true if this is an ODEX file
+	ODEXHeader   *ODEXHeader   // ODEX header (nil for plain DEX)
+	Dependencies []ODEXDependency // ODEX dependencies (nil for plain DEX)
+	raw          []byte
 }
 
 // Parse reads and parses a DEX file from the given byte slice.
+// Supports both DEX and ODEX formats.
 func Parse(data []byte) (*DexFile, error) {
+	if len(data) < 8 {
+		return nil, fmt.Errorf("dex: file too short (%d bytes)", len(data))
+	}
+
+	// Check if this is an ODEX file
+	if bytes.HasPrefix(data, ODEXMagic) {
+		return ParseODEX(data)
+	}
+
 	d := &DexFile{
 		raw:       data,
 		ClassData: make(map[uint32]*ClassData),
@@ -249,8 +268,9 @@ func Parse(data []byte) (*DexFile, error) {
 		return nil, fmt.Errorf("dex: file too short (%d bytes)", len(data))
 	}
 
-	// Verify magic
-	if !bytes.HasPrefix(data, DEXMagic35[:4]) {
+	// Verify magic (accept both dex and dey)
+	magic := data[:4]
+	if !bytes.HasPrefix(magic, []byte{0x64, 0x65}) || (magic[2] != 0x78 && magic[2] != 0x79) || magic[3] != 0x0a {
 		return nil, fmt.Errorf("dex: invalid magic")
 	}
 
@@ -833,7 +853,7 @@ func (d *DexFile) GetVersion() string {
 
 // IsODEX returns true if this is an optimized DEX (ODEX) file.
 func (d *DexFile) IsODEX() bool {
-	return d.Header.Magic[0] == 'd' && d.Header.Magic[1] == 'e' && d.Header.Magic[2] == 'y'
+	return d.IsODEXFile || (d.Header.Magic[0] == 'd' && d.Header.Magic[1] == 'e' && d.Header.Magic[2] == 'y')
 }
 
 // ParseFromReader parses a DEX file from an io.Reader.
@@ -843,4 +863,89 @@ func ParseFromReader(r io.Reader) (*DexFile, error) {
 		return nil, err
 	}
 	return Parse(data)
+}
+
+// ParseODEX parses an ODEX (Optimized DEX) file.
+// It extracts the embedded DEX data and parses the ODEX header and dependencies.
+func ParseODEX(data []byte) (*DexFile, error) {
+	if len(data) < 48 {
+		return nil, fmt.Errorf("odex: file too short (%d bytes)", len(data))
+	}
+
+	// Parse ODEX header
+	odexHeader, err := ParseODEXHeader(data)
+	if err != nil {
+		return nil, fmt.Errorf("odex: %w", err)
+	}
+
+	// Parse dependencies
+	var deps []ODEXDependency
+	if odexHeader.DependenciesLength > 0 {
+		deps, err = ParseODEXDependencies(data, odexHeader.Dependencies, odexHeader.DependenciesLength)
+		if err != nil {
+			return nil, fmt.Errorf("odex: dependencies: %w", err)
+		}
+	}
+
+	// Extract embedded DEX data
+	if odexHeader.DexOffset+odexHeader.DexLength > uint32(len(data)) {
+		return nil, fmt.Errorf("odex: embedded DEX out of bounds")
+	}
+	dexData := data[odexHeader.DexOffset : odexHeader.DexOffset+odexHeader.DexLength]
+
+	// Parse the embedded DEX
+	d := &DexFile{
+		raw:          dexData,
+		ClassData:    make(map[uint32]*ClassData),
+		CodeItems:    make(map[uint32]*CodeItem),
+		IsODEXFile:   true,
+		ODEXHeader:   odexHeader,
+		Dependencies: deps,
+	}
+
+	if len(dexData) < 116 {
+		return nil, fmt.Errorf("odex: embedded DEX too short (%d bytes)", len(dexData))
+	}
+
+	// Verify embedded DEX magic
+	if !bytes.HasPrefix(dexData, DEXMagic35[:4]) {
+		return nil, fmt.Errorf("odex: embedded DEX has invalid magic")
+	}
+
+	if err := d.parseHeader(); err != nil {
+		return nil, fmt.Errorf("odex: header: %w", err)
+	}
+
+	if err := d.parseStringIDs(); err != nil {
+		return nil, fmt.Errorf("odex: string_ids: %w", err)
+	}
+
+	if err := d.parseTypeIDs(); err != nil {
+		return nil, fmt.Errorf("odex: type_ids: %w", err)
+	}
+
+	if err := d.parseProtoIDs(); err != nil {
+		return nil, fmt.Errorf("odex: proto_ids: %w", err)
+	}
+
+	if err := d.parseFieldIDs(); err != nil {
+		return nil, fmt.Errorf("odex: field_ids: %w", err)
+	}
+
+	if err := d.parseMethodIDs(); err != nil {
+		return nil, fmt.Errorf("odex: method_ids: %w", err)
+	}
+
+	if err := d.parseClassDefs(); err != nil {
+		return nil, fmt.Errorf("odex: class_defs: %w", err)
+	}
+
+	if d.Header.MapOff > 0 && d.Header.MapOff < uint32(len(dexData)) {
+		d.parseMapList(d.Header.MapOff)
+	}
+
+	// Parse all code items referenced by methods
+	d.parseAllCodeItems()
+
+	return d, nil
 }

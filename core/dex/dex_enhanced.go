@@ -13,21 +13,24 @@ import (
 // We use the standard library for checksum computation here.
 
 // ODEX header (Optimized DEX)
+// Structure: 48 bytes total
+// [8: magic] [4: dex_offset] [4: dex_length] [4: deps_offset] [4: deps_length] [4: aux_offset] [4: aux_length] [4: flags] [4: padding] [12: reserved]
 type ODEXHeader struct {
-	Magic         [8]byte  // "dey\n036\0" or similar
-	DexOffset     uint32   // Offset to embedded DEX
-	DexLength     uint32   // Length of embedded DEX
-	Dependencies  uint32   // Offset to dependency table
-	DependenciesLength uint32 // Length of dependency table
-	Flags         uint32   // ODEX flags
-	Padding       [20]byte // Padding to 48 bytes
+	Magic              [8]byte // "dey\n036\0" or similar
+	DexOffset          uint32  // Offset to embedded DEX
+	DexLength          uint32  // Length of embedded DEX
+	Dependencies       uint32  // Offset to dependency table
+	DependenciesLength uint32  // Length of dependency table
+	AuxOffset          uint32  // Offset to aux data
+	AuxLength          uint32  // Length of aux data
+	Flags              uint32  // ODEX flags
+	Padding            uint32  // Padding
 }
 
 // ODEXDependency represents a dependency in an ODEX file.
 type ODEXDependency struct {
-	Name    string
-	ModTime uint32
-	CRC     uint32
+	Name     string // Name of the dependency (length-prefixed UTF-8)
+	Checksum [20]byte // SHA1 checksum of the dependency
 }
 
 // HiddenApiClassDataItem represents hidden API restriction info.
@@ -295,8 +298,8 @@ func (d *DexFile) GetInterfaces(classIdx uint32) []string {
 
 // ParseODEXHeader parses an ODEX file header.
 func ParseODEXHeader(data []byte) (*ODEXHeader, error) {
-	if len(data) < 48 {
-		return nil, fmt.Errorf("odex: file too short")
+	if len(data) < 40 {
+		return nil, fmt.Errorf("odex: file too short for header (%d bytes)", len(data))
 	}
 
 	if !bytes.HasPrefix(data, []byte("dey\n")) {
@@ -309,50 +312,52 @@ func ParseODEXHeader(data []byte) (*ODEXHeader, error) {
 	header.DexLength = binary.LittleEndian.Uint32(data[12:16])
 	header.Dependencies = binary.LittleEndian.Uint32(data[16:20])
 	header.DependenciesLength = binary.LittleEndian.Uint32(data[20:24])
-	header.Flags = binary.LittleEndian.Uint32(data[24:28])
+	header.AuxOffset = binary.LittleEndian.Uint32(data[24:28])
+	header.AuxLength = binary.LittleEndian.Uint32(data[28:32])
+	header.Flags = binary.LittleEndian.Uint32(data[32:36])
+	header.Padding = binary.LittleEndian.Uint32(data[36:40])
 
 	return header, nil
 }
 
 // ParseODEXDependencies parses the dependency table from an ODEX file.
+// Format: [4: modification_time] [4: crc] [4: dalvik_build] [4: dependency_count]
+//         For each dependency: [4: string_length] [N: name] [20: checksum]
 func ParseODEXDependencies(data []byte, offset, length uint32) ([]ODEXDependency, error) {
-	if offset+4 > uint32(len(data)) {
-		return nil, fmt.Errorf("odex: dependencies out of bounds")
+	if offset+16 > uint32(len(data)) {
+		return nil, fmt.Errorf("odex: dependencies header out of bounds")
 	}
 
-	count := binary.LittleEndian.Uint32(data[offset : offset+4])
-	off := offset + 4
+	off := offset
+	// Skip modification_time, crc, dalvik_build
+	off += 12
 
-	deps := make([]ODEXDependency, count)
-	for i := uint32(0); i < count; i++ {
-		if off+12 > uint32(len(data)) {
-			break
+	dependencyCount := binary.LittleEndian.Uint32(data[off : off+4])
+	off += 4
+
+	deps := make([]ODEXDependency, dependencyCount)
+	for i := uint32(0); i < dependencyCount; i++ {
+		if off+4 > uint32(len(data)) {
+			return deps[:i], nil
 		}
 
-		// Name is 256 bytes of UTF-16 LE
-		nameBytes := data[off : off+256]
-		deps[i].Name = decodeUTF16Name(nameBytes)
-		off += 256
+		stringLength := binary.LittleEndian.Uint32(data[off : off+4])
+		off += 4
 
-		deps[i].ModTime = binary.LittleEndian.Uint32(data[off : off+4])
-		off += 4
-		deps[i].CRC = binary.LittleEndian.Uint32(data[off : off+4])
-		off += 4
+		if off+stringLength > uint32(len(data)) {
+			return deps[:i], nil
+		}
+		deps[i].Name = string(data[off : off+stringLength])
+		off += stringLength
+
+		if off+20 > uint32(len(data)) {
+			return deps[:i], nil
+		}
+		copy(deps[i].Checksum[:], data[off:off+20])
+		off += 20
 	}
 
 	return deps, nil
-}
-
-func decodeUTF16Name(data []byte) string {
-	runes := make([]rune, 0, 128)
-	for i := 0; i+1 < len(data); i += 2 {
-		ch := binary.LittleEndian.Uint16(data[i : i+2])
-		if ch == 0 {
-			break
-		}
-		runes = append(runes, rune(ch))
-	}
-	return string(runes)
 }
 
 // GetRaw returns the raw DEX file bytes.

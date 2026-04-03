@@ -198,7 +198,7 @@ LEB128 variable-length integer encoding used extensively in DEX format.
 |--------|-------------|--------|
 | APK | Android Package | ✅ Full support |
 | DEX | Dalvik Executable v035-v043 | ✅ Full support |
-| ODEX | Optimized DEX | ⚠️ Basic support |
+| ODEX | Optimized DEX | ✅ Full support |
 | AXML | Android Binary XML | ✅ Full support |
 | ARSC | Android Resource Table | ✅ Full support |
 
