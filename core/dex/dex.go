@@ -187,7 +187,7 @@ type CodeItem struct {
 	InsnsSize     uint32
 	Insns         []uint16
 	Tries         []TryItem
-	CatchHandler  *CatchHandler
+	CatchHandlers []*CatchHandler
 }
 
 // TryItem represents a try block
@@ -199,15 +199,15 @@ type TryItem struct {
 
 // CatchHandler holds catch handler information
 type CatchHandler struct {
-	Size     int32
-	Handlers []EncodedCatchHandler
+	Size         int32
+	Handlers     []EncodedCatchHandler
+	CatchAllAddr uint32
 }
 
 // EncodedCatchHandler represents a single catch handler
 type EncodedCatchHandler struct {
-	TypeIdx  uint32
-	Addr     uint32
-	CatchAll bool
+	TypeIdx uint32
+	Addr    uint32
 }
 
 // MapItem represents an item in the map list
@@ -392,39 +392,46 @@ func (d *DexFile) parseCodeItem(offset uint32) (*CodeItem, error) {
 			off += 2
 		}
 
-		// Parse catch handlers (encoded)
+		// Parse encoded_catch_handler_list
 		if off < uint32(len(d.raw)) {
-			handler := &CatchHandler{}
-			size, n := leb128.ReadSLEB128(d.raw[off:])
-			off += uint32(n)
-			handler.Size = int32(size)
+			// Read EncodedCatchHandlerList size (ULEB128)
+			listSize, listN := leb128.ReadULEB128(d.raw[off:])
+			off += uint32(listN)
 
-			handler.Handlers = make([]EncodedCatchHandler, abs32(handler.Size))
-			for i := int32(0); i < abs32(handler.Size); i++ {
+			code.CatchHandlers = make([]*CatchHandler, listSize)
+			for h := uint64(0); h < listSize; h++ {
 				if off >= uint32(len(d.raw)) {
 					break
 				}
-				typeIdx, n1 := leb128.ReadULEB128(d.raw[off:])
-				off += uint32(n1)
-				addr, n2 := leb128.ReadULEB128(d.raw[off:])
-				off += uint32(n2)
-				handler.Handlers[i] = EncodedCatchHandler{
-					TypeIdx: uint32(typeIdx),
-					Addr:    uint32(addr),
+				handler := &CatchHandler{}
+				size, n := leb128.ReadSLEB128(d.raw[off:])
+				off += uint32(n)
+				handler.Size = int32(size)
+
+				handler.Handlers = make([]EncodedCatchHandler, abs32(handler.Size))
+				for i := int32(0); i < abs32(handler.Size); i++ {
+					if off >= uint32(len(d.raw)) {
+						break
+					}
+					typeIdx, n1 := leb128.ReadULEB128(d.raw[off:])
+					off += uint32(n1)
+					addr, n2 := leb128.ReadULEB128(d.raw[off:])
+					off += uint32(n2)
+					handler.Handlers[i] = EncodedCatchHandler{
+						TypeIdx: uint32(typeIdx),
+						Addr:    uint32(addr),
+					}
 				}
-			}
-			if handler.Size <= 0 {
-				// Has catch_all
-				if off < uint32(len(d.raw)) {
-					catchAllAddr, n := leb128.ReadULEB128(d.raw[off:])
-					_ = catchAllAddr
-					_ = n
-					handler.Handlers = append(handler.Handlers, EncodedCatchHandler{
-						CatchAll: true,
-					})
+				if handler.Size <= 0 {
+					// Has catch_all
+					if off < uint32(len(d.raw)) {
+						catchAllAddr, n := leb128.ReadULEB128(d.raw[off:])
+						off += uint32(n)
+						handler.CatchAllAddr = uint32(catchAllAddr)
+					}
 				}
+				code.CatchHandlers[h] = handler
 			}
-			code.CatchHandler = handler
 		}
 	}
 
