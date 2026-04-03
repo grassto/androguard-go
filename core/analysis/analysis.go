@@ -443,6 +443,63 @@ func (a *Analysis) GetMethodsCalling(classMethod string) []XRef {
 	return a.xrefs[classMethod]
 }
 
+// IsClassPresent checks if a class name is present in the analysis.
+func (a *Analysis) IsClassPresent(name string) bool {
+	for _, c := range a.classes {
+		if c.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// GetClassAnalysis returns the ClassAnalysis for the given class name.
+func (a *Analysis) GetClassAnalysis(name string) *ClassAnalysis {
+	return a.GetClassByName(name)
+}
+
+// GetMethodAnalysisByName returns all MethodAnalysis matching the method name.
+func (a *Analysis) GetMethodAnalysisByName(name string) []*MethodAnalysis {
+	var result []*MethodAnalysis
+	for _, m := range a.methods {
+		if m.Name == name {
+			result = append(result, m)
+		}
+	}
+	return result
+}
+
+// GetStringsAnalysis returns all strings as a map of value -> StringAnalysis.
+func (a *Analysis) GetStringsAnalysis() map[string]*StringAnalysis {
+	result := make(map[string]*StringAnalysis)
+	for _, s := range a.strings {
+		result[s.Value] = s
+	}
+	return result
+}
+
+// CreateXref is an alias for internal xref building.
+// In Python androguard this is called after adding DEX files.
+func (a *Analysis) CreateXref() {
+	// xrefs are already built during analyze()
+}
+
+// GetPermissions returns permission strings found in the analysis.
+func (a *Analysis) GetPermissions() []string {
+	perms := make(map[string]bool)
+	for _, s := range a.strings {
+		if strings.HasPrefix(s.Value, "android.permission.") ||
+			strings.HasPrefix(s.Value, "android.app.permission.") {
+			perms[s.Value] = true
+		}
+	}
+	result := make([]string, 0, len(perms))
+	for p := range perms {
+		result = append(result, p)
+	}
+	return result
+}
+
 // GetStringsUsedInMethod returns all strings used in a method.
 func (a *Analysis) GetStringsUsedInMethod(className, methodName string) []string {
 	for _, m := range a.methods {

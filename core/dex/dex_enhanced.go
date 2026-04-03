@@ -365,3 +365,114 @@ func GetOffset(r io.ReadSeeker) int64 {
 	pos, _ := r.Seek(0, io.SeekCurrent)
 	return pos
 }
+
+// GetEncodedMethods returns all encoded methods across all classes.
+func (d *DexFile) GetEncodedMethods() []*EncodedMethod {
+	var methods []*EncodedMethod
+	for i := range d.ClassDefs {
+		cd, ok := d.ClassData[uint32(i)]
+		if !ok {
+			continue
+		}
+		for j := range cd.DirectMethods {
+			methods = append(methods, &cd.DirectMethods[j])
+		}
+		for j := range cd.VirtualMethods {
+			methods = append(methods, &cd.VirtualMethods[j])
+		}
+	}
+	return methods
+}
+
+// GetEncodedMethodsClass returns all encoded methods for a given class name.
+func (d *DexFile) GetEncodedMethodsClass(className string) []*EncodedMethod {
+	classIdx := d.GetClass(className)
+	if classIdx < 0 {
+		return nil
+	}
+	cd, ok := d.ClassData[uint32(classIdx)]
+	if !ok {
+		return nil
+	}
+	var methods []*EncodedMethod
+	for j := range cd.DirectMethods {
+		methods = append(methods, &cd.DirectMethods[j])
+	}
+	for j := range cd.VirtualMethods {
+		methods = append(methods, &cd.VirtualMethods[j])
+	}
+	return methods
+}
+
+// GetEncodedFieldsClass returns all encoded fields for a given class name.
+func (d *DexFile) GetEncodedFieldsClass(className string) []*EncodedField {
+	classIdx := d.GetClass(className)
+	if classIdx < 0 {
+		return nil
+	}
+	cd, ok := d.ClassData[uint32(classIdx)]
+	if !ok {
+		return nil
+	}
+	var fields []*EncodedField
+	for j := range cd.StaticFields {
+		fields = append(fields, &cd.StaticFields[j])
+	}
+	for j := range cd.InstanceFields {
+		fields = append(fields, &cd.InstanceFields[j])
+	}
+	return fields
+}
+
+// GetEncodedMethodDescriptor returns encoded methods matching a descriptor pattern.
+// The pattern should be in the form "class->method(descriptor)"
+func (d *DexFile) GetEncodedMethodDescriptor(descriptor string) []*EncodedMethod {
+	var result []*EncodedMethod
+	for i := range d.ClassDefs {
+		className := d.GetClassName(uint32(i))
+		cd, ok := d.ClassData[uint32(i)]
+		if !ok {
+			continue
+		}
+		for j := range cd.DirectMethods {
+			m := &cd.DirectMethods[j]
+			fullName := fmt.Sprintf("%s->%s%s", className, d.GetMethodName(m.MethodIdxDiff), d.GetMethodDescriptor(m.MethodIdxDiff))
+			if fullName == descriptor {
+				result = append(result, m)
+			}
+		}
+		for j := range cd.VirtualMethods {
+			m := &cd.VirtualMethods[j]
+			fullName := fmt.Sprintf("%s->%s%s", className, d.GetMethodName(m.MethodIdxDiff), d.GetMethodDescriptor(m.MethodIdxDiff))
+			if fullName == descriptor {
+				result = append(result, m)
+			}
+		}
+	}
+	return result
+}
+
+// GetSuperclassName returns the superclass name for a class def index.
+func (d *DexFile) GetSuperclassName(classIdx uint32) string {
+	if int(classIdx) >= len(d.ClassDefs) {
+		return ""
+	}
+	cd := d.ClassDefs[classIdx]
+	if cd.SuperclassIdx == NO_INDEX {
+		return ""
+	}
+	return d.GetTypeName(cd.SuperclassIdx)
+}
+
+// GetClassAnnotations returns the annotations directory for a class.
+func (d *DexFile) GetClassAnnotations(classIdx uint32) *AnnotationsDirectory {
+	if int(classIdx) >= len(d.ClassDefs) {
+		return nil
+	}
+	cd := d.ClassDefs[classIdx]
+	if cd.AnnotationsOff == 0 {
+		return nil
+	}
+	cm := NewClassManager(d)
+	return cm.GetAnnotationsDirectory(cd.AnnotationsOff)
+}
