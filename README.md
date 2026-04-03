@@ -18,13 +18,13 @@ Go implementation of [Androguard](https://github.com/androguard/androguard) - An
 ## Installation
 
 ```bash
-go install github.com/goandroguard/goandroguard/cli@latest
+go install github.com/grassto/androguard-go/cli@latest
 ```
 
 Or build from source:
 
 ```bash
-git clone https://github.com/goandroguard/goandroguard.git
+git clone https://github.com/grassto/androguard-go.git
 cd androguard-go
 go build -o androguard ./cli
 ```
@@ -56,9 +56,9 @@ import (
     "fmt"
     "log"
 
-    "github.com/goandroguard/goandroguard/core/apk"
-    "github.com/goandroguard/goandroguard/core/dex"
-    "github.com/goandroguard/goandroguard/core/analysis"
+    "github.com/grassto/androguard-go/core/apk"
+    "github.com/grassto/androguard-go/core/dex"
+    "github.com/grassto/androguard-go/core/analysis"
 )
 
 func main() {
