@@ -211,22 +211,25 @@ func (p *AXMLParser) Next() (int, error) {
 
 	case ResXMLStartElement:
 		elem := XMLElement{}
-		if p.offset+20 <= len(p.data) {
+		if p.offset+24 <= len(p.data) {
 			elem.Line = leb128.ReadUint32(p.data[p.offset+8 : p.offset+12])
-			elem.NamespaceURI = leb128.ReadUint32(p.data[p.offset+12 : p.offset+16])
-			elem.Name = leb128.ReadUint32(p.data[p.offset+16 : p.offset+20])
+			elem.NamespaceURI = leb128.ReadUint32(p.data[p.offset+16 : p.offset+20])
+			elem.Name = leb128.ReadUint32(p.data[p.offset+20 : p.offset+24])
 		}
 
 		// Parse attributes
-		attrStart := int(headerSize)
-		if p.offset+attrStart+4 <= len(p.data) {
-			attrExtStart := int(binary.LittleEndian.Uint16(p.data[p.offset+20 : p.offset+22]))
-			attrExtSize := int(binary.LittleEndian.Uint16(p.data[p.offset+22 : p.offset+24]))
-			attrCount := int(binary.LittleEndian.Uint16(p.data[p.offset+24 : p.offset+26]))
-			_ = attrExtStart
-			_ = attrExtSize
+		// attrStart at offset 24-25, attrSize at 26-27, attrCount at 28-29
+		if p.offset+30 <= len(p.data) {
+			_ = int(binary.LittleEndian.Uint16(p.data[p.offset+24 : p.offset+26])) // attrStart
+			attrSize := int(binary.LittleEndian.Uint16(p.data[p.offset+26 : p.offset+28]))
+			attrCount := int(binary.LittleEndian.Uint16(p.data[p.offset+28 : p.offset+30]))
 
-			attrOff := p.offset + 28 // Standard start of attributes
+			// Default attribute size is 20 bytes
+			if attrSize == 0 {
+				attrSize = 20
+			}
+
+			attrOff := p.offset + 36 // Attributes start after the header fields
 			for i := 0; i < attrCount; i++ {
 				if attrOff+20 > len(p.data) {
 					break
@@ -239,7 +242,7 @@ func (p *AXMLParser) Next() (int, error) {
 					ValueData:    leb128.ReadUint32(p.data[attrOff+16 : attrOff+20]),
 				}
 				elem.Attributes = append(elem.Attributes, attr)
-				attrOff += 20
+				attrOff += attrSize
 			}
 		}
 
@@ -348,21 +351,27 @@ func (p *AXMLParser) decodeUTF8(data []byte, offset int) string {
 }
 
 func (p *AXMLParser) decodeUTF16(data []byte, offset int) string {
-	if offset >= len(data) {
+	if offset+2 > len(data) {
 		return ""
 	}
 
-	strLen, n := leb128.ReadULEB128(data[offset:])
-	offset += n
+	// For UTF-16 strings, length is stored as uint16 (not ULEB128)
+	strLen := int(binary.LittleEndian.Uint16(data[offset : offset+2]))
+	offset += 2
 
-	if offset+int(strLen)*2 > len(data) {
+	// Skip null terminator (2 bytes) if present
+	// Total bytes needed: strLen * 2
+	if offset+strLen*2 > len(data) {
 		return ""
 	}
 
 	runes := make([]rune, 0, strLen)
-	for i := uint64(0); i < strLen; i++ {
+	for i := 0; i < strLen; i++ {
 		ch := binary.LittleEndian.Uint16(data[offset : offset+2])
 		offset += 2
+		if ch == 0 {
+			break
+		}
 		runes = append(runes, rune(ch))
 	}
 
