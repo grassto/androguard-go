@@ -18,6 +18,22 @@ import (
 	"github.com/grassto/androguard-go/core/dex"
 )
 
+// formatValue resolves a short component name to its fully qualified name.
+// ".Foo" → "package.Foo", "Foo" → "package.Foo", "a.b.Foo" → "a.b.Foo".
+func (a *APK) formatValue(value string) string {
+	if value == "" || a.GetPackageName() == "" {
+		return value
+	}
+	dotIdx := strings.Index(value, ".")
+	if dotIdx == 0 {
+		return a.GetPackageName() + value
+	}
+	if dotIdx == -1 {
+		return a.GetPackageName() + "." + value
+	}
+	return value
+}
+
 // APK Signature Block constants
 var (
 	APKSigMagic       = []byte("APK Sig Block 42")
@@ -152,7 +168,8 @@ func (a *APK) parseManifest() error {
 			return nil
 		}
 	}
-	return fmt.Errorf("AndroidManifest.xml not found")
+	// Missing AndroidManifest.xml is not fatal — some APKs may lack it
+	return nil
 }
 
 func (a *APK) parseResources() {
@@ -627,7 +644,7 @@ func (a *APK) GetActivities() []string {
 		if elem.Name == "activity" {
 			for _, attr := range elem.Attributes {
 				if attr.Name == "name" && attr.Value != "" {
-					activities = append(activities, attr.Value)
+					activities = append(activities, a.formatValue(attr.Value))
 				}
 			}
 		}
@@ -646,7 +663,7 @@ func (a *APK) GetServices() []string {
 		if elem.Name == "service" {
 			for _, attr := range elem.Attributes {
 				if attr.Name == "name" && attr.Value != "" {
-					services = append(services, attr.Value)
+					services = append(services, a.formatValue(attr.Value))
 				}
 			}
 		}
@@ -665,7 +682,7 @@ func (a *APK) GetReceivers() []string {
 		if elem.Name == "receiver" {
 			for _, attr := range elem.Attributes {
 				if attr.Name == "name" && attr.Value != "" {
-					receivers = append(receivers, attr.Value)
+					receivers = append(receivers, a.formatValue(attr.Value))
 				}
 			}
 		}
@@ -684,7 +701,7 @@ func (a *APK) GetProviders() []string {
 		if elem.Name == "provider" {
 			for _, attr := range elem.Attributes {
 				if attr.Name == "name" && attr.Value != "" {
-					providers = append(providers, attr.Value)
+					providers = append(providers, a.formatValue(attr.Value))
 				}
 			}
 		}

@@ -323,7 +323,7 @@ func (a *APK) GetIntentFilters(componentType string) map[string][]map[string][]s
 			// Get component name
 			for _, attr := range elem.Attributes {
 				if attr.Name == "name" && (attr.NamespaceURI == nsAndroid || attr.NamespaceURI == "") {
-					currentComponent = attr.Value
+					currentComponent = a.formatValue(attr.Value)
 				}
 			}
 
