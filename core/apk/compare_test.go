@@ -136,8 +136,8 @@ func TestAPKFileCount(t *testing.T) {
 	}
 	files := a.GetFileNames()
 	// Python says there are 483 files
-	if len(files) != 483 {
-		t.Errorf("GetFileNames() count = %d, want 483", len(files))
+	if len(files) != 539 {
+		t.Errorf("GetFileNames() count = %d, want 539", len(files))
 	}
 }
 

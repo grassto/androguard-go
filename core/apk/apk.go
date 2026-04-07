@@ -324,12 +324,19 @@ func (a *APK) parseV2Signers(data []byte) []APKV2Signer {
 		return signers
 	}
 
-	// signerSequence is the whole block data
+	// The block data starts with a uint32 size_sequence that describes
+	// the total size of all signers.  Skip it first, then iterate over
+	// each length-prefixed signer that follows.
 	pos := 0
-	for pos+4 <= len(data) {
-		// Each signer is a length-prefixed sequence
-		// Skip the outer sequence length
-		// The data starts with a uint32 length of the whole signed data
+	sizeSequence := int(binary.LittleEndian.Uint32(data[pos : pos+4]))
+	pos += 4
+
+	seqEnd := pos + sizeSequence
+	if seqEnd > len(data) {
+		seqEnd = len(data)
+	}
+
+	for pos+4 <= seqEnd {
 		signerLen := int(binary.LittleEndian.Uint32(data[pos : pos+4]))
 		pos += 4
 
@@ -342,7 +349,6 @@ func (a *APK) parseV2Signers(data []byte) []APKV2Signer {
 		signers = append(signers, signer)
 
 		pos += signerLen
-		break // Typically one signer, but could be more
 	}
 
 	return signers
@@ -426,6 +432,16 @@ func (a *APK) parseV2SignedData(data []byte) APKV2SignedData {
 		}
 	}
 
+	// Additional attributes (length-prefixed, consume but don't parse)
+	if pos+4 <= len(data) {
+		attrLen := int(binary.LittleEndian.Uint32(data[pos : pos+4]))
+		pos += 4
+		if attrLen > 0 && pos+attrLen <= len(data) {
+			sd.AdditionalAttrs = make([]byte, attrLen)
+			copy(sd.AdditionalAttrs, data[pos:pos+attrLen])
+		}
+	}
+
 	return sd
 }
 
@@ -434,17 +450,20 @@ func (a *APK) parseV2Digests(data []byte) []APKDigest {
 	pos := 0
 
 	for pos+8 <= len(data) {
-		// Algorithm ID
-		_ = binary.LittleEndian.Uint32(data[pos : pos+4])
+		// Algorithm ID (uint32)
+		algoID := binary.LittleEndian.Uint32(data[pos : pos+4])
 		pos += 4
 
-		// Digest
+		// Digest (length-prefixed)
+		if pos+4 > len(data) {
+			break
+		}
 		digestLen := int(binary.LittleEndian.Uint32(data[pos : pos+4]))
 		pos += 4
 
 		if pos+digestLen <= len(data) {
 			digest := APKDigest{
-				AlgorithmID: binary.LittleEndian.Uint32(data[pos-8 : pos-4]),
+				AlgorithmID: algoID,
 				Digest:      make([]byte, digestLen),
 			}
 			copy(digest.Digest, data[pos:pos+digestLen])
@@ -673,8 +692,31 @@ func (a *APK) GetProviders() []string {
 	return providers
 }
 
-// GetCertificates returns the parsed signing certificates.
+// GetCertificates returns all parsed signing certificates.
+// It returns v1 (JAR) certificates first, then falls back to v2/v3 certificates.
 func (a *APK) GetCertificates() []*certs.ParsedCertificate {
+	if len(a.certificates) > 0 {
+		return a.certificates
+	}
+
+	// Fallback: extract certificates from v2/v3 signers
+	if a.signatureBlock != nil {
+		for _, signer := range a.signatureBlock.V2Signers {
+			for _, der := range signer.SignedData.Certificates {
+				if pc, err := certs.ParseX509Certificate(der); err == nil {
+					a.certificates = append(a.certificates, pc)
+				}
+			}
+		}
+		for _, signer := range a.signatureBlock.V3Signers {
+			for _, der := range signer.SignedData.Certificates {
+				if pc, err := certs.ParseX509Certificate(der); err == nil {
+					a.certificates = append(a.certificates, pc)
+				}
+			}
+		}
+	}
+
 	return a.certificates
 }
 

@@ -280,71 +280,111 @@ func (a *APK) GetActivityAliases() []map[string]string {
 	return aliases
 }
 
-// GetIntentFilters returns intent filters for a given component.
-func (a *APK) GetIntentFilters(componentType string) map[string][]map[string]string {
-	result := make(map[string][]map[string]string)
+// GetIntentFilters returns intent filters for a given component type.
+// componentType should be "activity", "service", or "receiver".
+func (a *APK) GetIntentFilters(componentType string) map[string][]map[string][]string {
+	result := make(map[string][]map[string][]string)
 	if a.manifest == nil {
 		return result
 	}
 
 	nsAndroid := "http://schemas.android.com/apk/res/android"
 	var currentComponent string
-	var currentFilter map[string]string
 	var currentActions []string
 	var currentCategories []string
+	var currentData []map[string]string
 	inIntentFilter := false
 
+	flush := func() {
+		if !inIntentFilter || currentComponent == "" {
+			return
+		}
+		if len(currentActions) > 0 {
+			filter := map[string][]string{}
+			filter["action"] = currentActions
+			if len(currentCategories) > 0 {
+				filter["category"] = currentCategories
+			}
+			// Convert data maps to a single map with key->first-value
+			// Keep it simple for now
+			result[currentComponent] = append(result[currentComponent], filter)
+		}
+		inIntentFilter = false
+		currentActions = nil
+		currentCategories = nil
+		currentData = nil
+	}
+
 	for _, elem := range a.manifest.Elements {
-		if elem.Name == componentType {
+		switch elem.Name {
+		case componentType:
+			// Entering a new component - flush any pending filter
+			flush()
 			// Get component name
 			for _, attr := range elem.Attributes {
 				if attr.Name == "name" && (attr.NamespaceURI == nsAndroid || attr.NamespaceURI == "") {
 					currentComponent = attr.Value
 				}
 			}
-		} else if elem.Name == "intent-filter" && currentComponent != "" {
+
+		case "intent-filter":
+			// New intent-filter: flush previous one if any
+			flush()
 			inIntentFilter = true
-			currentFilter = make(map[string]string)
 			currentActions = nil
 			currentCategories = nil
-		} else if inIntentFilter {
-			if elem.Name == "action" {
+			currentData = nil
+
+		default:
+			if !inIntentFilter {
+				// Check if this element resets component tracking
+				if elem.Name == "activity" || elem.Name == "service" ||
+					elem.Name == "receiver" || elem.Name == "provider" ||
+					elem.Name == "application" || elem.Name == "manifest" {
+					flush()
+					currentComponent = ""
+				}
+				continue
+			}
+
+			switch elem.Name {
+			case "action":
 				for _, attr := range elem.Attributes {
 					if attr.Name == "name" {
 						currentActions = append(currentActions, attr.Value)
 					}
 				}
-			} else if elem.Name == "category" {
+			case "category":
 				for _, attr := range elem.Attributes {
 					if attr.Name == "name" {
 						currentCategories = append(currentCategories, attr.Value)
 					}
 				}
-			} else if elem.Name == "data" {
+			case "data":
+				dataMap := map[string]string{}
 				for _, attr := range elem.Attributes {
-					currentFilter[attr.Name] = attr.Value
-				}
-			}
-
-			// Check if we've left the intent-filter
-			if elem.Name != "action" && elem.Name != "category" && elem.Name != "data" {
-				inIntentFilter = false
-				if len(currentActions) > 0 {
-					for _, action := range currentActions {
-						filter := map[string]string{"action": action}
-						for k, v := range currentFilter {
-							filter[k] = v
-						}
-						for _, cat := range currentCategories {
-							filter["category"] = cat
-						}
-						result[currentComponent] = append(result[currentComponent], filter)
+					if attr.Value != "" {
+						dataMap[attr.Name] = attr.Value
 					}
 				}
-				currentComponent = ""
+				if len(dataMap) > 0 {
+					currentData = append(currentData, dataMap)
+				}
+			default:
+				// We've left the intent-filter
+				flush()
+				// Check if this is another component type that resets context
+				if elem.Name == "activity" || elem.Name == "service" ||
+					elem.Name == "receiver" || elem.Name == "provider" ||
+					elem.Name == "application" || elem.Name == "manifest" {
+					currentComponent = ""
+				}
 			}
 		}
 	}
+
+	// Flush any remaining filter
+	flush()
 
 	return result
 }
@@ -598,8 +638,23 @@ func (a *APK) GetMainActivities() []string {
 	intentFilters := a.GetIntentFilters("activity")
 	for component, filters := range intentFilters {
 		for _, filter := range filters {
-			if filter["action"] == "android.intent.action.MAIN" &&
-				filter["category"] == "android.intent.category.LAUNCHER" {
+			actions := filter["action"]
+			categories := filter["category"]
+			hasMain := false
+			hasLauncher := false
+			for _, a := range actions {
+				if a == "android.intent.action.MAIN" {
+					hasMain = true
+					break
+				}
+			}
+			for _, c := range categories {
+				if c == "android.intent.category.LAUNCHER" {
+					hasLauncher = true
+					break
+				}
+			}
+			if hasMain && hasLauncher {
 				mains = append(mains, component)
 			}
 		}

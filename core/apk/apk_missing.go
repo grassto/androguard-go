@@ -355,8 +355,23 @@ func (a *APK) GetMainActivityFromXML() []string {
 	intentFilters := a.GetIntentFilters("activity")
 	for component, filters := range intentFilters {
 		for _, filter := range filters {
-			if filter["action"] == "android.intent.action.MAIN" &&
-				filter["category"] == "android.intent.category.LAUNCHER" {
+			actions := filter["action"]
+			categories := filter["category"]
+			hasMain := false
+			hasLauncher := false
+			for _, a := range actions {
+				if a == "android.intent.action.MAIN" {
+					hasMain = true
+					break
+				}
+			}
+			for _, c := range categories {
+				if c == "android.intent.category.LAUNCHER" {
+					hasLauncher = true
+					break
+				}
+			}
+			if hasMain && hasLauncher {
 				activities = append(activities, component)
 				break
 			}
