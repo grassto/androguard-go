@@ -635,30 +635,75 @@ func (a *APK) GetMainActivities() []string {
                 return mains
         }
 
-        intentFilters := a.GetIntentFilters("activity")
-        for component, filters := range intentFilters {
-                for _, filter := range filters {
-                        actions := filter["action"]
-                        categories := filter["category"]
-                        hasMain := false
-                        hasLauncher := false
-                        for _, a := range actions {
-                                if a == "android.intent.action.MAIN" {
-                                        hasMain = true
-                                        break
+        nsAndroid := "http://schemas.android.com/apk/res/android"
+        var currentComponent string
+        var currentActions []string
+        var currentCategories []string
+        inIntentFilter := false
+
+        flush := func() {
+                if !inIntentFilter || currentComponent == "" {
+                        return
+                }
+                hasMain := false
+                hasLauncher := false
+                for _, action := range currentActions {
+                        if action == "android.intent.action.MAIN" {
+                                hasMain = true
+                                break
+                        }
+                }
+                for _, cat := range currentCategories {
+                        if cat == "android.intent.category.LAUNCHER" {
+                                hasLauncher = true
+                                break
+                        }
+                }
+                if hasMain && hasLauncher {
+                        mains = append(mains, currentComponent)
+                }
+                inIntentFilter = false
+                currentActions = nil
+                currentCategories = nil
+        }
+
+        for _, elem := range a.manifest.Elements {
+                switch elem.Name {
+                case "activity", "activity-alias":
+                        flush()
+                        for _, attr := range elem.Attributes {
+                                if attr.Name == "name" && (attr.NamespaceURI == nsAndroid || attr.NamespaceURI == "") {
+                                        currentComponent = attr.Value
                                 }
                         }
-                        for _, c := range categories {
-                                if c == "android.intent.category.LAUNCHER" {
-                                        hasLauncher = true
-                                        break
-                                }
+
+                case "intent-filter":
+                        flush()
+                        inIntentFilter = true
+                        currentActions = nil
+                        currentCategories = nil
+
+                default:
+                        if !inIntentFilter {
+                                continue
                         }
-                        if hasMain && hasLauncher {
-                                mains = append(mains, component)
+                        switch elem.Name {
+                        case "action":
+                                for _, attr := range elem.Attributes {
+                                        if attr.Name == "name" {
+                                                currentActions = append(currentActions, attr.Value)
+                                        }
+                                }
+                        case "category":
+                                for _, attr := range elem.Attributes {
+                                        if attr.Name == "name" {
+                                                currentCategories = append(currentCategories, attr.Value)
+                                        }
+                                }
                         }
                 }
         }
+        flush()
 
         return mains
 }
@@ -667,7 +712,7 @@ func (a *APK) GetMainActivities() []string {
 func (a *APK) GetMainActivity() string {
         mains := a.GetMainActivities()
         if len(mains) > 0 {
-                return mains[0]
+                return a.formatValue(mains[0])
         }
         return ""
 }
